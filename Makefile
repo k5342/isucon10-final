@@ -46,6 +46,7 @@ SERVICE_WEBAPP := isutrain-go
 
 # for HTTP
 ifeq ($(IS_DOCKER_HTTP),true)
+	# requires: logging = 'json-file'
 	LOG_HTTP := $(shell sudo docker inspect --format='{{.LogPath}}' $(DOCKER_HTTP))
 else
 	LOG_HTTP := /var/log/nginx/access.log
@@ -158,7 +159,11 @@ logrotate-before:
 	mkdir -p $(LOG_DIR)
 
 logrotate-nginx:
+ifeq ($(IS_DOCKER_DB),true)
+	sudo docker logs $(DOCKER_HTTP) > $(LOG_DIR)/access.log
+else
 	sudo cp $(LOG_HTTP) $(LOG_DIR)/access.log
+endif
 	sudo chmod 644 $(LOG_DIR)/access.log
 	sudo chown $(shell whoami) $(LOG_DIR)/access.log
 	sudo truncate -s 0 $(LOG_HTTP)
