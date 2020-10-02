@@ -13,6 +13,7 @@ help:
 	@echo "   make status-f   ... show journalctl -fu $(SERVICE_WEBAPP) (follow)"
 	@echo "   make qdigest    ... generate slowlog from latest slow.log using querydigest"
 	@echo "   make ptdigest   ... generate slowlog from latest slow.log using pt-query-digest"
+	@echo "   make upload     ... upload summaries to discord"
 	@echo "Configuration Variables"
 	@echo "   [Common]"
 	@echo "   - SERVICE_XXX ... a systemd service name needs to restart on benchmark"
@@ -122,31 +123,32 @@ status-f:
 	sudo journalctl -fu $(SERVICE_WEBAPP)
 
 
-.PHONY: lslog kataru qdigest ptdigest
+.PHONY: lslog kataru qdigest ptdigest upload
 lslog:
 	@find $(HOME)/logs/ -type f -printf "%p\t%s\n" | sort
 
 kataru:
 	$(eval LAST_ACCESS_LOG := $(shell find $(HOME)/logs/*/access.log | sort | tail -1))
 	$(eval BASEDIR := $(shell dirname $(LAST_ACCESS_LOG)))
-	cat $(LAST_ACCESS_LOG) | kataribe > $(BASEDIR)/kataribe.log
-	cat $(BASEDIR)/kataribe.log 
-	cat $(BASEDIR)/kataribe.log | ./discord-post.sh --filename $(BASEDIR)/kataribe.log
-	
+	cat $(LAST_ACCESS_LOG) | kataribe > $(BASEDIR)/summary_kataribe.log
+	cat $(BASEDIR)/summary_kataribe.log 
 
 qdigest:
 	$(eval LAST_SLOW_LOG := $(shell find $(HOME)/logs/*/slow.log | sort | tail -1))
 	$(eval BASEDIR := $(shell dirname $(LAST_SLOW_LOG)))
-	querydigest -f $(LAST_SLOW_LOG) -n 10 > $(BASEDIR)/slow-qdigest.log
-	cat $(BASEDIR)/slow-qdigest.log
-	cat $(BASEDIR)/slow-qdigest.log | ./discord-post.sh --filename $(BASEDIR)/slow-qdigest.log
+	querydigest -f $(LAST_SLOW_LOG) -n 10 > $(BASEDIR)/summary_slow-qdigest.log
+	cat $(BASEDIR)/summary_slow-qdigest.log
 
 ptdigest:
 	$(eval LAST_SLOW_LOG := $(shell find $(HOME)/logs/*/slow.log | sort | tail -1))
 	$(eval BASEDIR := $(shell dirname $(LAST_SLOW_LOG)))
-	pt-query-digest $(LAST_SLOW_LOG) > $(BASEDIR)/slow-ptdigest.log
-	cat $(BASEDIR)/slow-ptdigest.log
-	cat $(BASEDIR)/slow-ptdigest.log | ./discord-post.sh --filename $(BASEDIR)/slow-ptdigest.log
+	pt-query-digest $(LAST_SLOW_LOG) > $(BASEDIR)/summary_slow-ptdigest.log
+	cat $(BASEDIR)/summary_slow-ptdigest.log
+
+upload:
+	$(eval LAST_ACCESS_LOG := $(shell find $(HOME)/logs/*/access.log | sort | tail -1))
+	$(eval BASEDIR := $(shell dirname $(LAST_ACCESS_LOG)))
+	ls $(BASEDIR)/summary* | xargs -I% bash -c "cat % | ./discord-post.sh --filename %"
 	
 
 .PHONY: logrotate logrotate-before logrotate-nginx logrotate-slow
