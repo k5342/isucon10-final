@@ -131,12 +131,14 @@ qdigest:
 	$(eval BASEDIR := $(shell dirname $(LAST_SLOW_LOG)))
 	querydigest -f $(LAST_SLOW_LOG) -n 10 > $(BASEDIR)/slow-qdigest.log
 	cat $(BASEDIR)/slow-qdigest.log
+	cat $(BASEDIR)/slow-qdigest.log | ./discord-post.sh --filename $(BASEDIR)/slow-qdigest.log
 
 ptdigest:
 	$(eval LAST_SLOW_LOG := $(shell find $(HOME)/logs/*/slow.log | sort | tail -1))
 	$(eval BASEDIR := $(shell dirname $(LAST_SLOW_LOG)))
 	pt-query-digest $(LAST_SLOW_LOG) > $(BASEDIR)/slow-ptdigest.log
 	cat $(BASEDIR)/slow-ptdigest.log
+	cat $(BASEDIR)/slow-ptdigest.log | ./discord-post.sh --filename $(BASEDIR)/slow-ptdigest.log
 	
 
 .PHONY: logrotate logrotate-before logrotate-nginx logrotate-slow
