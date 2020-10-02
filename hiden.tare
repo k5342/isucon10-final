@@ -1,0 +1,59 @@
+#[mysqld]
+#default_authentication_plugin=mysql_native_password
+#;performance_schema=off
+
+skip-external-locking
+
+key_buffer_size		= 16M               #index格納領域を広くする．indexをいっぱい貼ったら大きくする．空きメモリの30%が目安．
+max_allowed_packet	= 128M              #クライアントへのread / writeで許容するサイズの変更．でかいデータを用いるときに大きくすると効く．
+net_read_timeout    = 30                #max_allowed_packetを大きくしすぎるとコケることがあるので，そのときに変更する．readの待機時間を伸ばす．
+net_write_timeout   = 60                #max_allowed_packetを大きくしすぎるとコケることがあるので，そのときに変更する．writeの待機時間を伸ばす．
+thread_stack		= 192K              #各スレッドがコールスタックとして使うメモリ領域．基本はいじらない．
+thread_cache_size   = 8                 #接続を試みるクライアントへのスレッドを再生成しないようにする．
+#query_cache_type   = 1                 #mysql8.xでは使えない，query cacheを行うときには1，行わないなら0にする．
+#query_cache_limit	= 1M                #mysql8.xでは使えない．同じSELECTが何度も走るときに有効だが更新があるテーブルに対しては結果が悪くなることがあるので注意
+#query_cache_size   = 16M               #mysql8.xでは使えない．同じSELECTが何度も走るときに有効だが更新があるテーブルに対しては結果が悪くなることがあるので注意
+expire_logs_days    = 1                 #logを保持する期間．基本的にかえる必要はない．
+max_binlog_size     = 100M              #この数字を超えるバイナリログが貯まると破棄される．サーバの圧迫を防ぐ．
+
+## slow query log
+slow_query_log    = ON                                  #コメントアウトを外すとonになる
+slow_query_log_file = mysql-slow.log                    #保存場所
+#log_slow_admin_statements                              #ALTER TABLEやDROP INDEXといった管理ステートメントを含めるようにする．
+log_slow_slave_statements                               #レプリケーションのスレッドがしきい値を超えた場合でもスローログとして出すようにする．
+long_query_time     = 0                                 #下限
+
+## innodb
+#innodb_strict_mode
+innodb_buffer_pool_size         = 512M                      #データとindexをキャッシュするメモリ上の領域．空きメモリの80%が目安．
+innodb_log_buffer_size          = 16M                       #ログのバッファサイズ
+innodb_log_file_size            = 512M                      #ログファイルのサイズ上限
+innodb_doublewrite              = 0                         #最高のパフォーマンスが求められているため0
+innodb_read_io_threads          = 8                         #読み取り io thread (default 4)
+innodb_write_io_threads         = 8                         #書き込み io thread (default 4)
+innodb_lock_wait_timeout        = 5                         #行ロックの解除までの時間．(default 50)
+innodb_autoinc_lock_mode        = 2
+innodb_flush_log_at_trx_commit  = 0                         #ログバッファからログファイルの書き込みを減らす設定は2 (default 0)
+innodb_flush_method             = O_DIRECT                  #ダブルキャッシュを防ぐためにO_DIRECTにする必要がある．
+innodb_file_per_table                                       #テーブルをtruncateやdropするときにOSのディスク容量を開放できる
+#innodb_file_format = barracuda                             # barracudaを使うとテーブルサイズが圧縮されるらしい
+#innodb_large_prefix            = ON                        # 長いindex keyprefixを許可する．同時にbarracudaとinnodb_file_per_tableもONにする必要がある．
+innodb_print_all_deadlocks      = ON                        #ロックの詳細情報が見える．(default OFF)
+
+
+## [mysqld-5.6] or [mysqld-5.7]
+loose_performance_schema = OFF
+loose_explicit_defaults_for_timestamp                       #mysql8からはない．TINESTAMP型のデフォルト値に関するwarningを消す．
+loose_table_open_cache_instances = 4                        #mysql8からはない．DDL文以外の並列性を向上させる．vCPUの数付近に合わせるとパフォーマンスが良くなる．
+
+## slow query log
+loose_log_queries_not_using_indexes
+loose_log_throttle_queries_not_using_indexes = 10
+
+## innodb
+loose_innodb_buffer_pool_dump_at_shutdown = 1               #innodb再起動時のウォームアッププロセス時間の短縮のためにキャッシュページを記録するかどうか (default 0)
+loose_innodb_buffer_pool_load_at_startup = 1                #再起動時にキャッシュページを利用するかどうか (default 0)
+
+performance_schema = OFF                                    #パフォーマンススキーマを解析するものはオーバーヘッドが大きくメモリを消費するためOFF
+
+
