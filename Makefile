@@ -166,7 +166,7 @@ logrotate-before:
 	mkdir -p $(LOG_DIR)
 
 logrotate-nginx:
-ifeq ($(IS_DOCKER_DB),true)
+ifeq ($(IS_DOCKER_HTTP),true)
 	sudo docker logs $(DOCKER_HTTP) > $(LOG_DIR)/access.log
 else
 	sudo cp $(LOG_HTTP) $(LOG_DIR)/access.log
