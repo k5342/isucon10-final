@@ -8,6 +8,7 @@ help:
 	@echo "   make logrotate  ... logrotate"
 	@echo "   make restart    ... restart related services"
 	@echo "   make bench      ... test, logrotate, and restart http-server and database"
+	@echo "   make analyze    ... run qdigest, kataribe, upload"
 	@echo "   make status     ... show systemctl status $(SERVICE_WEBAPP)"
 	@echo "   make status-j   ... show journalctl -u $(SERVICE_WEBAPP) (journal)"
 	@echo "   make status-f   ... show journalctl -fu $(SERVICE_WEBAPP) (follow)"
@@ -124,7 +125,8 @@ status-f:
 	sudo journalctl -fu $(SERVICE_WEBAPP)
 
 
-.PHONY: lslog kataru qdigest ptdigest upload
+.PHONY: analyze lslog kataru qdigest ptdigest upload
+analyze: kataru qdigest upload
 lslog:
 	@find $(HOME)/logs/ -type f -printf "%p\t%s\n" | sort
 
