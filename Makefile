@@ -122,9 +122,17 @@ status-f:
 	sudo journalctl -fu $(SERVICE_WEBAPP)
 
 
-.PHONY: lslog qdigest ptdigest
+.PHONY: lslog kataru qdigest ptdigest
 lslog:
 	@find $(HOME)/logs/ -type f -printf "%p\t%s\n" | sort
+
+kataru:
+	$(eval LAST_ACCESS_LOG := $(shell find $(HOME)/logs/*/access.log | sort | tail -1))
+	$(eval BASEDIR := $(shell dirname $(LAST_ACCESS_LOG)))
+	cat $(LAST_ACCESS_LOG) | kataribe > $(BASEDIR)/kataribe.log
+	cat $(BASEDIR)/kataribe.log 
+	cat $(BASEDIR)/kataribe.log | ./discord-post.sh --filename $(BASEDIR)/kataribe.log
+	
 
 qdigest:
 	$(eval LAST_SLOW_LOG := $(shell find $(HOME)/logs/*/slow.log | sort | tail -1))
