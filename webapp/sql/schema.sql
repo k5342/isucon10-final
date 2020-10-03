@@ -19,7 +19,8 @@ CREATE TABLE `teams` (
   `invite_token` VARCHAR(255) NOT NULL,
   `withdrawn` TINYINT(1) DEFAULT FALSE,
   `created_at` DATETIME(6) NOT NULL,
-  UNIQUE KEY (`leader_id`)
+  UNIQUE KEY (`leader_id`),
+  INDEX idx_withdrawn (withdrawn, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
 DROP TABLE IF EXISTS `benchmark_jobs`;
@@ -64,7 +65,8 @@ CREATE TABLE `notifications` (
   `read` TINYINT(1) NOT NULL DEFAULT FALSE,
   `encoded_message` VARCHAR(255) NOT NULL,
   `created_at` DATETIME(6) NOT NULL,
-  `updated_at` DATETIME(6) NOT NULL
+  `updated_at` DATETIME(6) NOT NULL,
+  INDEX idx_notifications (contestant_id, read)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 ALTER TABLE `notifications` ADD INDEX idx1 (`contestant_id`,`id`);
