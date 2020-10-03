@@ -1104,6 +1104,7 @@ func (*RegistrationService) DeleteRegistration(e echo.Context) error {
 
 type AudienceService struct{}
 
+/*
 func (*AudienceService) ListTeams(e echo.Context) error {
 	var teams []xsuportal.Team
 	err := db.Select(&teams, "SELECT * FROM `teams` WHERE `withdrawn` = FALSE ORDER BY `created_at` DESC")
@@ -1134,6 +1135,51 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 			IsStudent:   isStudent,
 		})
 	}
+	return writeProto(e, http.StatusOK, res)
+}
+*/
+
+func (*AudienceService) ListTeams(e echo.Context) error {
+	var members []xsuportal.ContestantWithTeam
+	err := db.Select(&members,
+		"SELECT c.id, c.password, c.team_id, c.name, c.student, c.staff, c.created_at, t.name as team_name"+
+			"FROM `teams` as t"+
+			"LEFT JOIN `contestants` as c"+
+			"ON t.id=c.team_id"+
+			"WHERE t.withdrawn = FALSE"+
+			"ORDER BY  t.created_at DESC, c.`team_id`")
+	if err != nil {
+		return fmt.Errorf("select teams: %w", err)
+	}
+
+	res := &audiencepb.ListTeamsResponse{}
+
+	var prev_member xsuportal.ContestantWithTeam
+	var memberNames []string
+	isStudent := true
+
+	for _, member := range members {
+		if member.ID == prev_member.ID {
+			memberNames = append(memberNames, member.Name.String)
+			isStudent = isStudent && member.Student
+		} else {
+			res.Teams = append(res.Teams, &audiencepb.ListTeamsResponse_TeamListItem{
+				TeamId:      int64(member.TeamID),
+				Name:        member.TeamName,
+				MemberNames: memberNames,
+				IsStudent:   isStudent,
+			})
+			prev_member = member
+			memberNames = []string{}
+			isStudent = true
+		}
+	}
+	res.Teams = append(res.Teams, &audiencepb.ListTeamsResponse_TeamListItem{
+		TeamId:      int64(prev_member.TeamID),
+		Name:        prev_member.TeamName,
+		MemberNames: memberNames,
+		IsStudent:   isStudent,
+	})
 	return writeProto(e, http.StatusOK, res)
 }
 
