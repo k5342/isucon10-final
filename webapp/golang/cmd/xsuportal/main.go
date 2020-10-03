@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"sync"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/golang/protobuf/proto"
@@ -49,6 +50,41 @@ const (
 
 var db *sqlx.DB
 var notifier xsuportal.Notifier
+
+type leaderboardCache struct {
+	sync.RWMutex
+	latestId int64
+	leaderBoard *resourcespb.Leaderboard
+}
+
+func NewLeaderboardCache() *leaderboardCache {
+	var id int64
+	var lb *resourcespb.Leaderboard
+	c := &leaderboardCache{
+		latestId: id, 
+		leaderBoard: lb,
+	}
+	return c
+}
+
+func (c *leaderboardCache) Update(id int64, lb *resourcespb.Leaderboard) {
+	c.Lock()
+	c.latestId = id
+	c.leaderBoard = lb
+	c.Unlock()
+}
+
+func (c *leaderboardCache) Get() (int64, *resourcespb.Leaderboard) {
+	var id int64
+	var lb *resourcespb.Leaderboard
+	c.RLock()
+	id = c.latestId
+	lb = c.leaderBoard
+	c.RUnlock()
+	return id, lb
+}
+
+var gleaderboardCache = NewLeaderboardCache()
 
 func main() {
 	srv := echo.New()
@@ -1441,12 +1477,22 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	}
 	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
 	contestFreezesAt := contestStatus.ContestFreezesAt
-
+	
 	tx, err := db.Beginx()
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	
+	id, lb := gleaderboardCache.Get()
+	var resultLastId []int64
+	err = tx.Select(&resultLastId, "SELECT `id` FROM `benchmark_jobs` ORDER BY `id` DESC LIMIT 1")
+	lastId := resultLastId[0]
+	
+	if id >= lastId {
+		return lb, nil
+	}
+
 	var leaderboard []xsuportal.LeaderBoardTeam
 	query := "SELECT\n" +
 		"  `teams`.`id` AS `id`,\n" +
@@ -1542,9 +1588,6 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	if err != sql.ErrNoRows && err != nil {
 		return nil, fmt.Errorf("select job results: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit tx: %w", err)
-	}
 	teamGraphScores := make(map[int64][]*resourcespb.Leaderboard_LeaderboardItem_LeaderboardScore)
 	for _, jobResult := range jobResults {
 		teamGraphScores[jobResult.TeamID] = append(teamGraphScores[jobResult.TeamID], &resourcespb.Leaderboard_LeaderboardItem_LeaderboardScore{
@@ -1577,6 +1620,10 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 			pb.GeneralTeams = append(pb.GeneralTeams, item)
 		}
 		pb.Teams = append(pb.Teams, item)
+	}
+	gleaderboardCache.Update(lastId, pb)
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 	return pb, nil
 }
