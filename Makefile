@@ -17,9 +17,12 @@ help:
 	@echo "  - make ptdigest   ... run pt-query-digest with latest slow.log"
 	@echo "  - make upload     ... upload summaries to discord"
 	@echo "  [Misc.]"
-	@echo "  - make status     ... show systemctl status $(SERVICE_WEBAPP)"
-	@echo "  - make status-j   ... show journalctl -u $(SERVICE_WEBAPP) (journal)"
-	@echo "  - make status-f   ... show journalctl -fu $(SERVICE_WEBAPP) (follow)"
+	@echo "  - make status-web     ... show systemctl status $(SERVICE_WEBAPP1)"
+	@echo "  - make status-web-j   ... show journalctl -u $(SERVICE_WEBAPP1) (journal)"
+	@echo "  - make status-web-f   ... show journalctl -fu $(SERVICE_WEBAPP1) (follow)"
+	@echo "  - make status-api     ... show systemctl status $(SERVICE_WEBAPP2)"
+	@echo "  - make status-api-j   ... show journalctl -u $(SERVICE_WEBAPP2) (journal)"
+	@echo "  - make status-api-f   ... show journalctl -fu $(SERVICE_WEBAPP2) (follow)"
 	@echo "Configuration Variables:"
 	@echo "  [Common]"
 	@echo "  - SERVICE_XXX     ... a systemd service name requires to restart when benchmark"
@@ -37,25 +40,26 @@ LOG_DIR := $(HOME)/logs/$(NOW)
 # ------
 # CONFIG
 # ------
-IS_DOCKER_HTTP    := true
-IS_DOCKER_DB      := true
-IS_DOCKER_WEBAPP  := true
-IS_DOCKER_COMPOSE := true
+IS_DOCKER_HTTP    := false
+IS_DOCKER_DB      := false
+IS_DOCKER_WEBAPP  := false
+IS_DOCKER_COMPOSE := false
 
 DOCKER_HTTP   := webapp_nginx_1
 DOCKER_DB     := webapp_mysql_1
 DOCKER_WEBAPP := webapp_webapp_1
 
-SERVICE_HTTP   := nginx
-SERVICE_DB     := mariadb
-SERVICE_WEBAPP := isutrain-go
+SERVICE_HTTP   := envoy
+SERVICE_DB     := mysql
+SERVICE_WEBAPP1 := xsuportal-web-golang.service
+SERVICE_WEBAPP2 := xsuportal-api-golang.service
 
 # for HTTP
 ifeq ($(IS_DOCKER_HTTP),true)
 	# requires: logging = 'json-file'
 	LOG_HTTP := $(shell sudo docker inspect --format='{{.LogPath}}' $(DOCKER_HTTP))
 else
-	LOG_HTTP := /var/log/nginx/access.log
+	LOG_HTTP := /var/log/envoy/access.log
 endif
 
 # for MySQL
@@ -66,7 +70,8 @@ LOG_SLOW  := /var/lib/mysql/mysql-slow.log
 
 
 .PHONY: test test-dbconf test-httpconf
-test: test-dbconf test-httpconf
+#test: test-dbconf test-httpconf
+test: test-dbconf
 
 test-dbconf:
 ifeq ($(IS_DOCKER_DB),true)
@@ -75,7 +80,9 @@ else
 	sudo mysqld --verbose --help > /dev/null
 endif
 
-test-httpconf:
+test-httpconf: test-nginxconf
+
+test-nginxconf:
 ifeq ($(IS_DOCKER_HTTP),true)
 	sudo docker exec $(DOCKER_HTTP) nginx -t
 else
@@ -97,41 +104,35 @@ endif
 .PHONY: restart
 restart:
 	sudo systemctl daemon-reload
-ifeq ($(IS_DOCKER_COMPOSE),true)
-	sudo systemctl restart $(SERVICE_WEBAPP)
-else
-	ifeq ($(IS_DOCKER_HTTP),true)
-		sudo docker restart $(DOCKER_HTTP)
-	else
-		sudo systemctl restart $(SERVICE_HTTP)
-	endif
-	
-	ifeq ($(IS_DOCKER_DB),true)
-		sudo docker restart $(DOCKER_DB)
-	else
-		sudo systemctl restart $(SERVICE_DB)
-	endif
-	
-	ifeq ($(IS_DOCKER_WEBAPP),true)
-		sudo docker restart $(DOCKER_WEBAPP)
-	else
-		sudo systemctl restart $(SERVICE_WEBAPP)
-	endif
-endif
+	sudo systemctl restart $(SERVICE_WEBAPP1)
+	sudo systemctl restart $(SERVICE_WEBAPP2)
+	sudo systemctl restart $(SERVICE_HTTP)
+	sudo systemctl restart $(SERVICE_DB)
 
-.PHONY: status status-j status-f
-status:
-	sudo systemctl status $(SERVICE_WEBAPP)
+.PHONY: status-web status-web-j status-web-f
+status-web:
+	sudo systemctl status $(SERVICE_WEBAPP1)
 
-status-j:
-	sudo journalctl -u $(SERVICE_WEBAPP)
+status-web-j:
+	sudo journalctl -u $(SERVICE_WEBAPP1)
 
-status-f:
-	sudo journalctl -fu $(SERVICE_WEBAPP)
+status-web-f:
+	sudo journalctl -fu $(SERVICE_WEBAPP1)
+
+.PHONY: status-api status-api-j status-api-f
+status-api:
+	sudo systemctl status $(SERVICE_WEBAPP2)
+
+status-api-j:
+	sudo journalctl -u $(SERVICE_WEBAPP2)
+
+status-api-f:
+	sudo journalctl -fu $(SERVICE_WEBAPP2)
 
 
 .PHONY: analyze lslog kataru qdigest ptdigest upload
-analyze: kataru qdigest upload
+#analyze: kataru qdigest upload
+analyze: qdigest upload
 lslog:
 	@find $(HOME)/logs/ -type f -printf "%p\t%s\n" | sort
 
