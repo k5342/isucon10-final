@@ -248,9 +248,9 @@ func (b *benchmarkReportService) saveAsRunning(db sqlx.Execer, job *xsuportal.Be
 }
 
 func pollBenchmarkJob(db sqlx.Queryer) (*xsuportal.BenchmarkJob, error) {
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		if i >= 1 {
-			//time.Sleep(50 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 		var job xsuportal.BenchmarkJob
 		err := sqlx.Get(
