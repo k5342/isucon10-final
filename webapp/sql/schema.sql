@@ -37,7 +37,8 @@ CREATE TABLE `benchmark_jobs` (
   `finished_at` DATETIME(6),
   `created_at` DATETIME(6) NOT NULL,
   `updated_at` DATETIME(6) NOT NULL,
-  INDEX idx_score_raw_deduction(score_raw, score_deduction)
+  INDEX idx_score_raw_deduction(score_raw, score_deduction),
+  INDEX idx_team_id (team_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 ALTER TABLE `benchmark_jobs` ADD INDEX idx1 (`team_id`,`id`);
