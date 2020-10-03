@@ -206,7 +206,7 @@ setup-querydigest:
 		wget https://github.com/akito0107/querydigest/releases/download/v1.0.2/querydigest_linux_x86_64.tar.gz -O querydigest.tar.gz; \
 		tar xf querydigest.tar.gz; \
 		sudo cp querydigest /usr/bin/
-	querydigest -h
+	querydigest -h || :
 
 setup-kataribe: setup-packages
 	mkdir -p $(HOME)/_setup
