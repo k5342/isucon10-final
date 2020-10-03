@@ -1478,7 +1478,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	
 	id, lb := gleaderboardCache.Get()
 	var resultLastId []int64
-	err = tx.Select(&resultLastId, "SELECT `id` FROM `benchmark_jobs` ORDER BY `id` DESC LIMIT 1")
+	err = tx.Select(&resultLastId, "SELECT LAST_INSERT_ID()")
 	lastId := resultLastId[0]
 	
 	if id >= lastId {
