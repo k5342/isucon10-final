@@ -90,9 +90,13 @@ else
 endif
 
 .PHONY: bench
-bench: test logrotate restart
+bench: test build logrotate restart
 bench-yes-i-know-this-option-will-also-dropdb: test dropdb logrotate restart
 
+
+.PHONY: build
+build:
+	(cd $(HOME)/webapp/golang; make)
 
 dropdb:
 ifeq ($(IS_DOCKER_DB),true)
@@ -158,6 +162,13 @@ upload:
 	$(eval LAST_ACCESS_LOG := $(shell find $(HOME)/logs/*/access.log | sort | tail -1))
 	$(eval BASEDIR := $(shell dirname $(LAST_ACCESS_LOG)))
 	ls $(BASEDIR)/summary* | xargs -I% bash -c "cat % | ./discord-post.sh --filename %"
+
+pprof-bench:
+	$(eval LAST_ACCESS_LOG := $(shell find $(HOME)/logs/*/access.log | sort | tail -1))
+	$(eval BASEDIR := $(shell dirname $(LAST_ACCESS_LOG)))
+	cd $(BASEDIR); \
+		go tool pprof -lines -png -output pprof-bench.png http://127.0.0.1:19999/debug/pprof/profile\?seconds=70; \
+		cat pprof-bench.png | ~/discord-post.sh --filename pprof-bench.png
 	
 
 .PHONY: logrotate logrotate-before logrotate-nginx logrotate-slow
