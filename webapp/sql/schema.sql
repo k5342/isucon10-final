@@ -6,8 +6,7 @@ CREATE TABLE `contestants` (
   `name` VARCHAR(255),
   `student` TINYINT(1) DEFAULT FALSE,
   `staff` TINYINT(1) DEFAULT FALSE,
-  `created_at` DATETIME(6) NOT NULL,
-  INDEX idx_team_id (team_id)
+  `created_at` DATETIME(6) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 DROP TABLE IF EXISTS `teams`;
@@ -20,7 +19,6 @@ CREATE TABLE `teams` (
   `withdrawn` TINYINT(1) DEFAULT FALSE,
   `created_at` DATETIME(6) NOT NULL,
   UNIQUE KEY (`leader_id`),
-  INDEX idx_withdrawn (withdrawn, created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4;
 
 DROP TABLE IF EXISTS `benchmark_jobs`;
@@ -38,10 +36,7 @@ CREATE TABLE `benchmark_jobs` (
   `finished_at` DATETIME(6),
   `created_at` DATETIME(6) NOT NULL,
   `updated_at` DATETIME(6) NOT NULL,
-  INDEX idx_score_raw_deduction(score_raw, score_deduction),
-  INDEX idx_team_id (team_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
-
 ALTER TABLE `benchmark_jobs` ADD INDEX idx1 (`team_id`,`id`);
 ALTER TABLE `benchmark_jobs` ADD INDEX idx2 (`status`,`team_id`,`id`);
 ALTER TABLE `benchmark_jobs` ADD INDEX idx3 (`status`,`team_id`,`finished_at`);
@@ -66,7 +61,6 @@ CREATE TABLE `notifications` (
   `encoded_message` VARCHAR(255) NOT NULL,
   `created_at` DATETIME(6) NOT NULL,
   `updated_at` DATETIME(6) NOT NULL,
-  INDEX idx_notifications (contestant_id, read)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 ALTER TABLE `notifications` ADD INDEX idx1 (`contestant_id`,`id`);
