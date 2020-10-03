@@ -108,6 +108,17 @@ type LeaderBoardTeam struct {
 	FinishCount          sql.NullInt64  `db:"finish_count"`
 }
 
+type ContestantWithTeam struct {
+	ID        string         `db:"id"`
+	Password  string         `db:"password"`
+	TeamID    int            `db:"team_id"`
+	Name      sql.NullString `db:"name"`
+	Student   bool           `db:"student"`
+	Staff     bool           `db:"staff"`
+	CreatedAt time.Time      `db:"created_at"`
+	TeamName  string         `db:"team_name"`
+}
+
 func (t *LeaderBoardTeam) Team() *Team {
 	return &Team{
 		ID:        t.ID,
