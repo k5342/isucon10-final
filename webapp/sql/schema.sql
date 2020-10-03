@@ -6,7 +6,8 @@ CREATE TABLE `contestants` (
   `name` VARCHAR(255),
   `student` TINYINT(1) DEFAULT FALSE,
   `staff` TINYINT(1) DEFAULT FALSE,
-  `created_at` DATETIME(6) NOT NULL
+  `created_at` DATETIME(6) NOT NULL,
+  INDEX idx_team_id (team_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 DROP TABLE IF EXISTS `teams`;
@@ -35,7 +36,9 @@ CREATE TABLE `benchmark_jobs` (
   `started_at` DATETIME(6),
   `finished_at` DATETIME(6),
   `created_at` DATETIME(6) NOT NULL,
-  `updated_at` DATETIME(6) NOT NULL
+  `updated_at` DATETIME(6) NOT NULL,
+  INDEX idx_score_raw_deduction(score_raw, score_deduction),
+  INDEX idx_team_id (team_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4;
 
 ALTER TABLE `benchmark_jobs` ADD INDEX idx1 (`team_id`,`id`);
