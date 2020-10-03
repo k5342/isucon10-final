@@ -90,9 +90,13 @@ else
 endif
 
 .PHONY: bench
-bench: test logrotate restart
+bench: test build logrotate restart
 bench-yes-i-know-this-option-will-also-dropdb: test dropdb logrotate restart
 
+
+.PHONY: build
+build:
+	(cd $(HOME)/webapp/golang; make)
 
 dropdb:
 ifeq ($(IS_DOCKER_DB),true)
