@@ -616,7 +616,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
-	team, _ := getCurrentTeam(e, db, true)
+	team, _ := getCurrentTeam(e, db, false)
 
 	var lastAnsweredClarificationID int64
 	err = db.Get(
