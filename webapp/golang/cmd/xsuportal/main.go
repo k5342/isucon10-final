@@ -449,7 +449,7 @@ func (*ContestantService) EnqueueBenchmarkJob(e echo.Context) error {
 	var jobCount int
 	err = tx.Get(
 		&jobCount,
-		"SELECT COUNT(*) AS `cnt` FROM `benchmark_jobs` WHERE `team_id` = ? AND `finished_at` IS NULL",
+		"SELECT COUNT(*) AS `cnt` FROM `benchmark_jobs` WHERE `team_id` = ? AND `finished_at` IS NULL LOCK IN SHARE MODE",
 		team.ID,
 	)
 	if err != nil {
