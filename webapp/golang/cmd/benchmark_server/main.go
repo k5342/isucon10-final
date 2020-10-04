@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
+	"runtime"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -280,6 +283,11 @@ func main() {
 
 	db, _ = xsuportal.GetDB()
 	db.SetMaxOpenConns(10)
+
+	runtime.SetBlockProfileRate(1)
+	go func() {
+		log.Print(http.ListenAndServe("0.0.0.0:19999", nil))
+	}()
 
 	server := grpc.NewServer()
 
