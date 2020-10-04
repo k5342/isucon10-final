@@ -68,13 +68,18 @@ func MakeTestNotificationPB() *resources.Notification {
 	}
 }
 
-func InsertNotification(db sqlx.Ext, notificationPB *resources.Notification, contestantID string) (*xsuportal.Notification, error) {
+func InsertNotification(db *sqlx.DB, notificationPB *resources.Notification, contestantID string) (*xsuportal.Notification, error) {
 	b, err := proto.Marshal(notificationPB)
 	if err != nil {
 		return nil, fmt.Errorf("marshal notification: %w", err)
 	}
 	encodedMessage := base64.StdEncoding.EncodeToString(b)
-	res, err := db.Exec(
+	tx, err := db.Beginx()
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(
 		"INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES (?, ?, FALSE, NOW(6), NOW(6))",
 		contestantID,
 		encodedMessage,
@@ -85,13 +90,16 @@ func InsertNotification(db sqlx.Ext, notificationPB *resources.Notification, con
 	id, _ := res.LastInsertId()
 	var notification xsuportal.Notification
 	err = sqlx.Get(
-		db,
+		tx,
 		&notification,
-		"SELECT * FROM `notifications` WHERE `id` = ?",
+		"SELECT * FROM `notifications` WHERE `id` = ? FOR UPDATE",
 		id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get notification: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 	return &notification, nil
 }
