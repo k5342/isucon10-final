@@ -641,6 +641,14 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		if err != sql.ErrNoRows && err != nil {
 			return fmt.Errorf("select notifications(after=%v): %w", after, err)
 		}
+		_, err = tx.Exec(
+			"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `id` > ? AND `read` = FALSE",
+			contestant.ID,
+			after,
+		)
+		if err != nil {
+			return fmt.Errorf("update notifications: %w", err)
+		}
 	} else {
 		err = tx.Select(
 			&notifications,
@@ -650,13 +658,13 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		if err != sql.ErrNoRows && err != nil {
 			return fmt.Errorf("select notifications: %w", err)
 		}
-	}
-	_, err = tx.Exec(
-		"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `read` = FALSE",
-		contestant.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("update notifications: %w", err)
+		_, err = tx.Exec(
+			"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `read` = FALSE",
+			contestant.ID,
+		)
+		if err != nil {
+			return fmt.Errorf("update notifications: %w", err)
+		}
 	}
 	team, _ := getCurrentTeam(e, tx, false)
 
@@ -1227,7 +1235,7 @@ func (*AudienceService) Dashboard(e echo.Context) error {
 	// TODO: set appropriate expire value
 	var leaderboard *resourcespb.Leaderboard 
 	var err error
-	if (currentTime - ts) < 1000 * 1000 * 400 {
+	if (currentTime - ts) < 1000 * 1000 * 500 {
 		fmt.Println("ok")
 		leaderboard = lb
 	} else {
