@@ -589,7 +589,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		}
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id`",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id` FOR UPDATE",
 			contestant.ID,
 			after,
 		)
@@ -599,7 +599,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	} else {
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id`",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id` FOR UPDATE",
 			contestant.ID,
 		)
 		if err != sql.ErrNoRows && err != nil {
@@ -613,17 +613,17 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("update notifications: %w", err)
 	}
+	team, _ := getCurrentTeam(e, tx, false)
+
+	var lastAnsweredClarificationID int64
+	err = tx.Get(
+		&lastAnsweredClarificationID,
+		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1 FOR UPDATE",
+		team.ID,
+	)
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
-	team, _ := getCurrentTeam(e, db, false)
-
-	var lastAnsweredClarificationID int64
-	err = db.Get(
-		&lastAnsweredClarificationID,
-		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1",
-		team.ID,
-	)
 	if err != sql.ErrNoRows && err != nil {
 		return fmt.Errorf("get last answered clarification: %w", err)
 	}
