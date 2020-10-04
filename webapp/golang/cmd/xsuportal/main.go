@@ -1142,11 +1142,11 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 func (*AudienceService) ListTeams(e echo.Context) error {
 	var members []xsuportal.ContestantWithTeam
 	err := db.Select(&members,
-		"SELECT c.id, c.password, c.team_id, c.name, c.student, c.staff, c.created_at, t.name as team_name"+
-			"FROM `teams` as t"+
-			"LEFT JOIN `contestants` as c"+
-			"ON t.id=c.team_id"+
-			"WHERE t.withdrawn = FALSE"+
+		"SELECT c.id, c.password, c.team_id, c.name, c.student, c.staff, c.created_at, t.name as team_name\n"+
+			"FROM `teams` as t\n"+
+			"LEFT JOIN `contestants` as c\n"+
+			"ON t.id=c.team_id\n"+
+			"WHERE t.withdrawn = FALSE\n"+
 			"ORDER BY  t.created_at DESC, c.`team_id`")
 	if err != nil {
 		return fmt.Errorf("select teams: %w", err)
