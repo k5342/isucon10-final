@@ -633,7 +633,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		}
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id` FOR UPDATE",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id` LOCK IN SHARE MODE",
 			contestant.ID,
 			after,
 		)
@@ -643,7 +643,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	} else {
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id` FOR UPDATE",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id` LOCK IN SHARE MODE",
 			contestant.ID,
 		)
 		if err != sql.ErrNoRows && err != nil {
@@ -662,7 +662,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	var lastAnsweredClarificationID int64
 	err = tx.Get(
 		&lastAnsweredClarificationID,
-		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1 FOR UPDATE",
+		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1 LOCK IN SHARE MODE",
 		team.ID,
 	)
 	if err := tx.Commit(); err != nil {
