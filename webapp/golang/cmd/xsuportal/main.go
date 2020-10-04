@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"sync"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/golang/protobuf/proto"
@@ -49,6 +50,41 @@ const (
 
 var db *sqlx.DB
 var notifier xsuportal.Notifier
+
+type leaderboardCache struct {
+	sync.RWMutex
+	latestId int64
+	leaderBoard *resourcespb.Leaderboard
+}
+
+func NewLeaderboardCache() *leaderboardCache {
+	var id int64
+	var lb *resourcespb.Leaderboard
+	c := &leaderboardCache{
+		latestId: id,
+		leaderBoard: lb,
+	}
+	return c
+}
+
+func (c *leaderboardCache) Update(id int64, lb *resourcespb.Leaderboard) {
+	c.Lock()
+	c.latestId = id
+	c.leaderBoard = lb
+	c.Unlock()
+}
+
+func (c *leaderboardCache) Get() (int64, *resourcespb.Leaderboard) {
+	var id int64
+	var lb *resourcespb.Leaderboard
+	c.RLock()
+	id = c.latestId
+	lb = c.leaderBoard
+	c.RUnlock()
+	return id, lb
+}
+
+var gleaderboardCache = NewLeaderboardCache()
 
 func main() {
 	srv := echo.New()
@@ -597,7 +633,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		}
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id`",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id` FOR UPDATE",
 			contestant.ID,
 			after,
 		)
@@ -607,7 +643,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	} else {
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id`",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id` FOR UPDATE",
 			contestant.ID,
 		)
 		if err != sql.ErrNoRows && err != nil {
@@ -621,17 +657,17 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("update notifications: %w", err)
 	}
+	team, _ := getCurrentTeam(e, tx, false)
+
+	var lastAnsweredClarificationID int64
+	err = tx.Get(
+		&lastAnsweredClarificationID,
+		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1 FOR UPDATE",
+		team.ID,
+	)
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
-	team, _ := getCurrentTeam(e, db, false)
-
-	var lastAnsweredClarificationID int64
-	err = db.Get(
-		&lastAnsweredClarificationID,
-		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1",
-		team.ID,
-	)
 	if err != sql.ErrNoRows && err != nil {
 		return fmt.Errorf("get last answered clarification: %w", err)
 	}
@@ -1447,6 +1483,20 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+
+	var lastId int64
+	id, lb := gleaderboardCache.Get()
+	var resultLastId struct {
+		table string
+		checksum int64
+	}
+	err = tx.Select(&resultLastId, "CHECKSUM TABLE benchmark_jobs")
+	lastId = resultLastId.checksum
+
+	if id != lastId {
+		return lb, nil
+	}
+
 	var leaderboard []xsuportal.LeaderBoardTeam
 	query := "SELECT\n" +
 		"  `teams`.`id` AS `id`,\n" +
@@ -1542,9 +1592,6 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	if err != sql.ErrNoRows && err != nil {
 		return nil, fmt.Errorf("select job results: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit tx: %w", err)
-	}
 	teamGraphScores := make(map[int64][]*resourcespb.Leaderboard_LeaderboardItem_LeaderboardScore)
 	for _, jobResult := range jobResults {
 		teamGraphScores[jobResult.TeamID] = append(teamGraphScores[jobResult.TeamID], &resourcespb.Leaderboard_LeaderboardItem_LeaderboardScore{
@@ -1577,6 +1624,10 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 			pb.GeneralTeams = append(pb.GeneralTeams, item)
 		}
 		pb.Teams = append(pb.Teams, item)
+	}
+	gleaderboardCache.Update(lastId, pb)
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 	return pb, nil
 }
