@@ -56,7 +56,7 @@ func (n *Notifier) VAPIDKey() *webpush.Options {
 	return n.options
 }
 
-func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, updated bool) error {
+func (n *Notifier) NotifyClarificationAnswered(db *sqlx.DB, c *Clarification, updated bool) error {
 	var contestants []struct {
 		ID     string `db:"id"`
 		TeamID int64  `db:"team_id"`
@@ -104,7 +104,7 @@ func (n *Notifier) NotifyClarificationAnswered(db sqlx.Ext, c *Clarification, up
 	return nil
 }
 
-func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) error {
+func (n *Notifier) NotifyBenchmarkJobFinished(db *sqlx.DB, job *BenchmarkJob) error {
 	var contestants []struct {
 		ID     string `db:"id"`
 		TeamID int64  `db:"team_id"`
@@ -139,13 +139,18 @@ func (n *Notifier) NotifyBenchmarkJobFinished(db sqlx.Ext, job *BenchmarkJob) er
 	return nil
 }
 
-func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, contestantID string) (*Notification, error) {
+func (n *Notifier) notify(db *sqlx.DB, notificationPB *resources.Notification, contestantID string) (*Notification, error) {
 	m, err := proto.Marshal(notificationPB)
 	if err != nil {
 		return nil, fmt.Errorf("marshal notification: %w", err)
 	}
 	encodedMessage := base64.StdEncoding.EncodeToString(m)
-	res, err := db.Exec(
+	tx, err := db.Beginx()
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	res, err := tx.Exec(
 		"INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES (?, ?, FALSE, NOW(6), NOW(6))",
 		contestantID,
 		encodedMessage,
@@ -156,13 +161,16 @@ func (n *Notifier) notify(db sqlx.Ext, notificationPB *resources.Notification, c
 	lastInsertID, _ := res.LastInsertId()
 	var notification Notification
 	err = sqlx.Get(
-		db,
+		tx,
 		&notification,
-		"SELECT * FROM `notifications` WHERE `id` = ? LIMIT 1",
+		"SELECT * FROM `notifications` WHERE `id` = ? LIMIT 1 FOR UPDATE",
 		lastInsertID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get inserted notification: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
 	}
 	return &notification, nil
 }
