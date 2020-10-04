@@ -10,7 +10,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	_ "net/http/pprof"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -49,7 +52,7 @@ var notifier xsuportal.Notifier
 
 func main() {
 	srv := echo.New()
-	srv.Debug = false
+	srv.Debug = util.GetEnv("DEBUG", "") != ""
 	srv.Server.Addr = fmt.Sprintf(":%v", util.GetEnv("PORT", "9292"))
 	srv.HideBanner = true
 
@@ -66,6 +69,11 @@ func main() {
 
 	srv.Use(middleware.Logger())
 	srv.Use(middleware.Recover())
+
+	runtime.SetBlockProfileRate(1)
+	go func() {
+		log.Print(http.ListenAndServe("0.0.0.0:9999", nil))
+	}()
 
 	srv.Use(session.Middleware(sessions.NewCookieStore([]byte("tagomoris"))))
 
