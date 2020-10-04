@@ -1183,7 +1183,7 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 			"LEFT JOIN `contestants` as c\n"+
 			"ON t.id=c.team_id\n"+
 			"WHERE t.withdrawn = FALSE\n"+
-			"ORDER BY  t.created_at DESC, c.`team_id`")
+			"ORDER BY  t.created_at DESC, c.`created_at`")
 	if err != nil {
 		return fmt.Errorf("select teams: %w", err)
 	}
@@ -1195,20 +1195,20 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 	isStudent := true
 
 	for _, member := range members {
-		if member.ID == prev_member.ID {
-			memberNames = append(memberNames, member.Name.String)
-			isStudent = isStudent && member.Student
-		} else {
+		if prev_member.TeamID != 0 && member.TeamID != prev_member.TeamID {
+			fmt.Println(member.TeamName);
 			res.Teams = append(res.Teams, &audiencepb.ListTeamsResponse_TeamListItem{
-				TeamId:      int64(member.TeamID),
-				Name:        member.TeamName,
+				TeamId:      int64(prev_member.TeamID),
+				Name:        prev_member.TeamName,
 				MemberNames: memberNames,
 				IsStudent:   isStudent,
 			})
-			prev_member = member
 			memberNames = []string{}
 			isStudent = true
 		}
+		isStudent = isStudent && member.Student
+		memberNames = append(memberNames, member.Name.String)
+		prev_member = member
 	}
 	res.Teams = append(res.Teams, &audiencepb.ListTeamsResponse_TeamListItem{
 		TeamId:      int64(prev_member.TeamID),
