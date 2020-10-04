@@ -58,7 +58,7 @@ func NewLeaderboardCache() *leaderboardCache {
 	var id int64
 	var lb *resourcespb.Leaderboard
 	c := &leaderboardCache{
-		latestId: id, 
+		latestId: id,
 		leaderBoard: lb,
 	}
 	return c
@@ -1469,23 +1469,24 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	}
 	contestFinished := contestStatus.Status == resourcespb.Contest_FINISHED
 	contestFreezesAt := contestStatus.ContestFreezesAt
-	
+
 	tx, err := db.Beginx()
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
-	
+
 	var lastId int64
-	if !contestFinished {
-		id, lb := gleaderboardCache.Get()
-		var resultLastId []int64
-		err = tx.Select(&resultLastId, "SELECT LAST_INSERT_ID()")
-		lastId = resultLastId[0]
-		
-		if id >= lastId {
-			return lb, nil
-		}
+	id, lb := gleaderboardCache.Get()
+	var resultLastId struct {
+		table string
+		checksum int64
+	}
+	err = tx.Select(&resultLastId, "CHECKSUM TABLE benchmark_jobs")
+	lastId = resultLastId.checksum
+
+	if id != lastId {
+		return lb, nil
 	}
 
 	var leaderboard []xsuportal.LeaderBoardTeam
