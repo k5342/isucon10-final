@@ -85,6 +85,7 @@ func (c *leaderboardCache) Get() (int64, *resourcespb.Leaderboard) {
 }
 
 var gleaderboardCache = NewLeaderboardCache()
+var gleaderboardCacheForAudience = NewLeaderboardCache()
 
 func main() {
 	srv := echo.New()
@@ -633,7 +634,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		}
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id` LOCK IN SHARE MODE",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id` FOR UPDATE",
 			contestant.ID,
 			after,
 		)
@@ -643,7 +644,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	} else {
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id` LOCK IN SHARE MODE",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id` FOR UPDATE",
 			contestant.ID,
 		)
 		if err != sql.ErrNoRows && err != nil {
@@ -662,7 +663,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	var lastAnsweredClarificationID int64
 	err = tx.Get(
 		&lastAnsweredClarificationID,
-		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1 LOCK IN SHARE MODE",
+		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1",
 		team.ID,
 	)
 	if err := tx.Commit(); err != nil {
@@ -1220,9 +1221,23 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 }
 
 func (*AudienceService) Dashboard(e echo.Context) error {
-	leaderboard, err := makeLeaderboardPB(e, 0)
-	if err != nil {
-		return fmt.Errorf("make leaderboard: %w", err)
+	var currentTime = time.Now().UnixNano() 
+	ts, lb := gleaderboardCacheForAudience.Get()
+	// check cache is valid (< 500ms)
+	// TODO: set appropriate expire value
+	var leaderboard *resourcespb.Leaderboard 
+	var err error
+	if (currentTime - ts) < 1000 * 1000 * 400 {
+		fmt.Println("ok")
+		leaderboard = lb
+	} else {
+		fmt.Println("invalidated")
+		// otherwise, invalidate cache
+		leaderboard, err = makeLeaderboardPB(e, 0)
+		gleaderboardCacheForAudience.Update(currentTime, leaderboard)
+		if err != nil {
+			return fmt.Errorf("make leaderboard: %w", err)
+		}
 	}
 	return writeProto(e, http.StatusOK, &audiencepb.DashboardResponse{
 		Leaderboard: leaderboard,
