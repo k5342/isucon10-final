@@ -111,7 +111,7 @@ restart:
 	sudo systemctl restart $(SERVICE_WEBAPP1)
 	sudo systemctl restart $(SERVICE_WEBAPP2)
 	sudo systemctl restart $(SERVICE_HTTP)
-	sudo systemctl restart $(SERVICE_DB)
+#	sudo systemctl restart $(SERVICE_DB)
 
 .PHONY: status-web status-web-j status-web-f
 status-web:
@@ -169,6 +169,12 @@ pprof-portal:
 	cd $(BASEDIR); \
 		go tool pprof -lines -png -output pprof-portal.png http://127.0.0.1:9999/debug/pprof/profile\?seconds=70; \
 		cat pprof-portal.png | ~/discord-post.sh --filename pprof-portal.png
+pprof-portal-block:
+	$(eval LAST_ACCESS_LOG := $(shell find $(HOME)/logs/*/access.log | sort | tail -1))
+	$(eval BASEDIR := $(shell dirname $(LAST_ACCESS_LOG)))
+	cd $(BASEDIR); \
+		go tool pprof -lines -png -output pprof-portal-block.png http://127.0.0.1:9999/debug/pprof/block; \
+		cat pprof-portal-block.png | ~/discord-post.sh --filename pprof-portal-block.png
 
 pprof-bench:
 	$(eval LAST_ACCESS_LOG := $(shell find $(HOME)/logs/*/access.log | sort | tail -1))
@@ -176,6 +182,12 @@ pprof-bench:
 	cd $(BASEDIR); \
 		go tool pprof -lines -png -output pprof-bench.png http://127.0.0.1:19999/debug/pprof/profile\?seconds=70; \
 		cat pprof-bench.png | ~/discord-post.sh --filename pprof-bench.png
+pprof-bench-block:
+	$(eval LAST_ACCESS_LOG := $(shell find $(HOME)/logs/*/access.log | sort | tail -1))
+	$(eval BASEDIR := $(shell dirname $(LAST_ACCESS_LOG)))
+	cd $(BASEDIR); \
+		go tool pprof -lines -png -output pprof-bench-block.png http://127.0.0.1:19999/debug/pprof/block; \
+		cat pprof-bench-block.png | ~/discord-post.sh --filename pprof-bench-block.png
 	
 
 .PHONY: logrotate logrotate-before logrotate-nginx logrotate-slow
