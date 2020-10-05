@@ -53,35 +53,55 @@ var notifier xsuportal.Notifier
 
 type leaderboardCache struct {
 	sync.RWMutex
-	latestId int64
+	latestId uint64
 	leaderBoard *resourcespb.Leaderboard
+	timeStamp int64
 }
 
 func NewLeaderboardCache() *leaderboardCache {
-	var id int64
-	var lb *resourcespb.Leaderboard
-	c := &leaderboardCache{
-		latestId: id,
-		leaderBoard: lb,
-	}
+	c := &leaderboardCache{}
 	return c
 }
 
-func (c *leaderboardCache) Update(id int64, lb *resourcespb.Leaderboard) {
+func (c *leaderboardCache) UpdateWithChecksum(lb *resourcespb.Leaderboard, id uint64) {
 	c.Lock()
+	c.leaderBoard = lb
 	c.latestId = id
+	c.Unlock()
+}
+
+
+func (c *leaderboardCache) UpdateWithTime(lb *resourcespb.Leaderboard) {
+	c.Lock()
+	c.timeStamp = time.Now().UnixNano()
 	c.leaderBoard = lb
 	c.Unlock()
 }
 
-func (c *leaderboardCache) Get() (int64, *resourcespb.Leaderboard) {
-	var id int64
+func (c *leaderboardCache) GetByChecksum(id uint64) (*resourcespb.Leaderboard, bool) {
 	var lb *resourcespb.Leaderboard
 	c.RLock()
-	id = c.latestId
-	lb = c.leaderBoard
+	if (id == c.latestId) {
+		lb = c.leaderBoard
+	} else {
+		lb = nil
+	}
 	c.RUnlock()
-	return id, lb
+	return lb, (lb != nil)
+}
+
+func (c *leaderboardCache) GetByTime() (*resourcespb.Leaderboard, bool) {
+	c.RLock()
+	currentTime := time.Now().UnixNano() 
+	// TODO: set appropriate expire value
+	var lb *resourcespb.Leaderboard
+	if (currentTime - c.timeStamp) < 1000 * 1000 * 800 {
+		lb = c.leaderBoard
+	} else {
+		lb = nil
+	}
+	c.RUnlock()
+	return lb, (lb != nil)
 }
 
 var gleaderboardCache = NewLeaderboardCache()
@@ -1229,20 +1249,19 @@ func (*AudienceService) ListTeams(e echo.Context) error {
 }
 
 func (*AudienceService) Dashboard(e echo.Context) error {
-	var currentTime = time.Now().UnixNano() 
-	ts, lb := gleaderboardCacheForAudience.Get()
 	// check cache is valid (< 500ms)
-	// TODO: set appropriate expire value
+	lb, valid := gleaderboardCacheForAudience.GetByTime()
+	
 	var leaderboard *resourcespb.Leaderboard 
 	var err error
-	if (currentTime - ts) < 1000 * 1000 * 500 {
+	if valid {
 		fmt.Println("ok")
 		leaderboard = lb
 	} else {
 		fmt.Println("invalidated")
 		// otherwise, invalidate cache
 		leaderboard, err = makeLeaderboardPB(e, 0)
-		gleaderboardCacheForAudience.Update(currentTime, leaderboard)
+		gleaderboardCacheForAudience.UpdateWithTime(leaderboard)
 		if err != nil {
 			return fmt.Errorf("make leaderboard: %w", err)
 		}
@@ -1507,16 +1526,16 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 	}
 	defer tx.Rollback()
 
-	var lastId int64
-	id, lb := gleaderboardCache.Get()
 	var resultLastId struct {
-		table string
-		checksum int64
+		Table    string `db:"Table"`
+		Checksum uint64 `db:"Checksum"`
 	}
-	err = tx.Select(&resultLastId, "CHECKSUM TABLE benchmark_jobs")
-	lastId = resultLastId.checksum
+	err = tx.Get(&resultLastId, "CHECKSUM TABLE benchmark_jobs")
+	lastId := resultLastId.Checksum
 
-	if id != lastId {
+	lb, valid := gleaderboardCache.GetByChecksum(lastId)
+	if valid {
+		fmt.Printf("this is valid %d\n", lastId)
 		return lb, nil
 	}
 
@@ -1648,7 +1667,7 @@ func makeLeaderboardPB(e echo.Context, teamID int64) (*resourcespb.Leaderboard, 
 		}
 		pb.Teams = append(pb.Teams, item)
 	}
-	gleaderboardCache.Update(lastId, pb)
+	gleaderboardCache.UpdateWithChecksum(pb, lastId)
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}
