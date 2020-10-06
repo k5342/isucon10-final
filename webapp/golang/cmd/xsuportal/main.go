@@ -987,13 +987,6 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	}
 	defer conn.Close()
 
-	// TODO: FOR UPDATE, LOCK IN SHARE MODE
-	_, err = conn.ExecContext(ctx, "LOCK TABLES `teams` WRITE, `contestants` WRITE")
-	if err != nil {
-		return fmt.Errorf("lock tables: %w", err)
-	}
-	defer conn.ExecContext(ctx, "UNLOCK TABLES")
-
 	randomBytes := make([]byte, 64)
 	_, err = rand.Read(randomBytes)
 	if err != nil {
@@ -1003,7 +996,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	var withinCapacity bool
 	err = conn.QueryRowContext(
 		ctx,
-		"SELECT COUNT(*) < ? AS `within_capacity` FROM `teams`",
+		"SELECT COUNT(*) < ? AS `within_capacity` FROM `teams` LOCK IN SHARE MODE",
 		TeamCapacity,
 	).Scan(&withinCapacity)
 	if err != nil {
