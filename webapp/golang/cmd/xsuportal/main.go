@@ -289,6 +289,7 @@ func (*AdminService) Initialize(e echo.Context) error {
 		"TRUNCATE `benchmark_jobs`",
 		"TRUNCATE `clarifications`",
 		"TRUNCATE `notifications`",
+		"TRUNCATE `notifications_cursor`",
 		"TRUNCATE `push_subscriptions`",
 		"TRUNCATE `contest_config`",
 	}
@@ -718,6 +719,16 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	}
 	defer tx.Rollback()
 	contestant, _ := getCurrentContestant(e, tx, false)
+	
+	var cursor xsuportal.NotificationCursor
+	err = tx.Get(
+		&cursor,
+		"SELECT * FROM `notifications_cursor` WHERE `contestant_id` = ? LIMIT 1 FOR UPDATE",
+		contestant.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("lock notification_cursor: %w", err)
+	}
 
 	var notifications []*xsuportal.Notification
 	if afterStr != "" {
@@ -727,17 +738,19 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		}
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? ORDER BY `id` FOR UPDATE",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? AND `id` <= ? ORDER BY `id`",
 			contestant.ID,
 			after,
+			cursor.NewestID,
 		)
 		if err != sql.ErrNoRows && err != nil {
 			return fmt.Errorf("select notifications(after=%v): %w", after, err)
 		}
 		_, err = tx.Exec(
-			"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `id` > ? AND `read` = FALSE",
+			"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `id` > ? AND `id` <= ? AND `read` = FALSE",
 			contestant.ID,
 			after,
+			cursor.NewestID,
 		)
 		if err != nil {
 			return fmt.Errorf("update notifications: %w", err)
@@ -745,15 +758,17 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	} else {
 		err = tx.Select(
 			&notifications,
-			"SELECT * FROM `notifications` WHERE `contestant_id` = ? ORDER BY `id` FOR UPDATE",
+			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` <= ? ORDER BY `id`",
 			contestant.ID,
+			cursor.NewestID,
 		)
 		if err != sql.ErrNoRows && err != nil {
 			return fmt.Errorf("select notifications: %w", err)
 		}
 		_, err = tx.Exec(
-			"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `read` = FALSE",
+			"UPDATE `notifications` SET `read` = TRUE WHERE `contestant_id` = ? AND `id` <= ? AND `read` = FALSE",
 			contestant.ID,
+			cursor.NewestID,
 		)
 		if err != nil {
 			return fmt.Errorf("update notifications: %w", err)
@@ -854,6 +869,16 @@ func (*ContestantService) Signup(e echo.Context) error {
 	}
 	if err != nil {
 		return fmt.Errorf("insert contestant: %w", err)
+	}
+	_, err = db.Exec(
+		"INSERT INTO `notifications_cursor` (`contestant_id`, `newest_id`, `read_id`) VALUES (?, 0, 0)",
+		req.ContestantId,
+	)
+	if mErr, ok := err.(*mysql.MySQLError); ok && mErr.Number == MYSQL_ER_DUP_ENTRY {
+		return halt(e, http.StatusBadRequest, "IDが既に登録されています", nil)
+	}
+	if err != nil {
+		return fmt.Errorf("insert notifications_cursor: %w", err)
 	}
 	sess, err := session.Get(SessionName, e)
 	if err != nil {

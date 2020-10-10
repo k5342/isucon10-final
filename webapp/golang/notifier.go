@@ -151,6 +151,15 @@ func (n *Notifier) notify(db *sqlx.DB, notificationPB *resources.Notification, c
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
+	var gotLock bool
+	err = tx.Get(
+		&gotLock,
+		"SELECT 1 FROM `notifications_cursor` WHERE `contestant_id` = ? FOR UPDATE",
+		contestantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("lock notification_cursor: %w", err)
+	}
 	now := time.Now()
 	res, err := tx.Exec(
 		"INSERT INTO `notifications` (`contestant_id`, `encoded_message`, `read`, `created_at`, `updated_at`) VALUES (?, ?, FALSE, ?, ?)",
@@ -163,6 +172,14 @@ func (n *Notifier) notify(db *sqlx.DB, notificationPB *resources.Notification, c
 		return nil, fmt.Errorf("insert notification: %w", err)
 	}
 	id, _ := res.LastInsertId()
+	_, err = tx.Exec(
+		"UPDATE `notifications_cursor` SET `newest_id` = ? WHERE `contestant_id` = ?",
+		id,
+		contestantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("update notification_cursor: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit tx: %w", err)
 	}

@@ -83,6 +83,12 @@ type Notification struct {
 	UpdatedAt      time.Time `db:"updated_at"`
 }
 
+type NotificationCursor struct {
+	ContestantID   string    `db:"contestant_id"`
+	NewestID       int64     `db:"newest_id"`
+	ReadID         int64     `db:"read_id"`
+}
+
 type PushSubscription struct {
 	ID           int64     `db:"id"`
 	ContestantID string    `db:"contestant_id"`
