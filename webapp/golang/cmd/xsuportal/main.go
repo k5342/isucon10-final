@@ -729,6 +729,9 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("lock notification_cursor: %w", err)
 	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
 
 	var notifications []*xsuportal.Notification
 	if afterStr != "" {
@@ -736,7 +739,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 		if err != nil {
 			return fmt.Errorf("parse after: %w", err)
 		}
-		err = tx.Select(
+		err = db.Select(
 			&notifications,
 			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` > ? AND `id` <= ? ORDER BY `id`",
 			contestant.ID,
@@ -756,7 +759,7 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 //			return fmt.Errorf("update notifications: %w", err)
 //		}
 	} else {
-		err = tx.Select(
+		err = db.Select(
 			&notifications,
 			"SELECT * FROM `notifications` WHERE `contestant_id` = ? AND `id` <= ? ORDER BY `id`",
 			contestant.ID,
@@ -774,17 +777,14 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 //			return fmt.Errorf("update notifications: %w", err)
 //		}
 	}
-	team, _ := getCurrentTeam(e, tx, false)
+	team, _ := getCurrentTeam(e, db, false)
 
 	var lastAnsweredClarificationID int64
-	err = tx.Get(
+	err = db.Get(
 		&lastAnsweredClarificationID,
 		"SELECT `id` FROM `clarifications` WHERE (`team_id` = ? OR `disclosed` = TRUE) AND `answered_at` IS NOT NULL ORDER BY `id` DESC LIMIT 1",
 		team.ID,
 	)
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
-	}
 	if err != sql.ErrNoRows && err != nil {
 		return fmt.Errorf("get last answered clarification: %w", err)
 	}
