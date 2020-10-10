@@ -713,13 +713,13 @@ func (*ContestantService) ListNotifications(e echo.Context) error {
 
 	afterStr := e.QueryParam("after")
 
+	contestant, _ := getCurrentContestant(e, db, false)
+	
 	tx, err := db.Beginx()
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
-	contestant, _ := getCurrentContestant(e, tx, false)
-	
 	var cursor xsuportal.NotificationCursor
 	err = tx.Get(
 		&cursor,
