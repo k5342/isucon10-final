@@ -51,8 +51,44 @@ const (
 var db *sqlx.DB
 var notifier xsuportal.Notifier
 
+type contestantCache struct {
+	mutex sync.RWMutex
+	contestants map[string]xsuportal.Contestant
+}
+
+func NewContestantCache() *contestantCache {
+	dict := make(map[string]xsuportal.Contestant)
+	c := &contestantCache{
+		contestants: dict,
+	}
+	return c
+}
+
+func (c *contestantCache) Update(contestant xsuportal.Contestant, contestantID string) {
+	c.mutex.Lock()
+	fmt.Println("contestantCache Update lock earn")
+	c.contestants[contestantID] = contestant
+	fmt.Println("contestantCache Update updated")
+	c.mutex.Unlock()
+}
+
+func (c *contestantCache) Lock() {
+	c.mutex.Lock()
+}
+
+func (c *contestantCache) Unlock() {
+	c.mutex.Unlock()
+}
+
+func (c *contestantCache) Get(id string) (xsuportal.Contestant, bool) {
+	c.mutex.RLock()
+	contestant, found := c.contestants[id]
+	c.mutex.RUnlock()
+	return contestant, found
+}
+
 type leaderboardCache struct {
-	sync.RWMutex
+	mutex sync.RWMutex
 	latestId uint64
 	leaderBoard *resourcespb.Leaderboard
 	timeStamp int64
@@ -64,34 +100,33 @@ func NewLeaderboardCache() *leaderboardCache {
 }
 
 func (c *leaderboardCache) UpdateWithChecksum(lb *resourcespb.Leaderboard, id uint64) {
-	c.Lock()
+	c.mutex.Lock()
 	c.leaderBoard = lb
 	c.latestId = id
-	c.Unlock()
+	c.mutex.Unlock()
 }
 
-
 func (c *leaderboardCache) UpdateWithTime(lb *resourcespb.Leaderboard) {
-	c.Lock()
+	c.mutex.Lock()
 	c.timeStamp = time.Now().UnixNano()
 	c.leaderBoard = lb
-	c.Unlock()
+	c.mutex.Unlock()
 }
 
 func (c *leaderboardCache) GetByChecksum(id uint64) (*resourcespb.Leaderboard, bool) {
 	var lb *resourcespb.Leaderboard
-	c.RLock()
+	c.mutex.RLock()
 	if (id == c.latestId) {
 		lb = c.leaderBoard
 	} else {
 		lb = nil
 	}
-	c.RUnlock()
+	c.mutex.RUnlock()
 	return lb, (lb != nil)
 }
 
 func (c *leaderboardCache) GetByTime() (*resourcespb.Leaderboard, bool) {
-	c.RLock()
+	c.mutex.RLock()
 	currentTime := time.Now().UnixNano() 
 	// TODO: set appropriate expire value
 	var lb *resourcespb.Leaderboard
@@ -100,10 +135,11 @@ func (c *leaderboardCache) GetByTime() (*resourcespb.Leaderboard, bool) {
 	} else {
 		lb = nil
 	}
-	c.RUnlock()
+	c.mutex.RUnlock()
 	return lb, (lb != nil)
 }
 
+var gcontestantCache = NewContestantCache()
 var gleaderboardCache = NewLeaderboardCache()
 var gleaderboardCacheForAudience = NewLeaderboardCache()
 
@@ -829,6 +865,7 @@ func (*ContestantService) Login(e echo.Context) error {
 	} else {
 		return halt(e, http.StatusBadRequest, "ログインIDまたはパスワードが正しくありません", nil)
 	}
+	fmt.Println("login done")
 	return writeProto(e, http.StatusOK, &contestantpb.LoginResponse{})
 }
 
@@ -950,12 +987,6 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	}
 	defer conn.Close()
 
-	_, err = conn.ExecContext(ctx, "LOCK TABLES `teams` WRITE, `contestants` WRITE")
-	if err != nil {
-		return fmt.Errorf("lock tables: %w", err)
-	}
-	defer conn.ExecContext(ctx, "UNLOCK TABLES")
-
 	randomBytes := make([]byte, 64)
 	_, err = rand.Read(randomBytes)
 	if err != nil {
@@ -965,7 +996,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	var withinCapacity bool
 	err = conn.QueryRowContext(
 		ctx,
-		"SELECT COUNT(*) < ? AS `within_capacity` FROM `teams`",
+		"SELECT COUNT(*) < ? AS `within_capacity` FROM `teams` LOCK IN SHARE MODE",
 		TeamCapacity,
 	).Scan(&withinCapacity)
 	if err != nil {
@@ -993,7 +1024,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 		return halt(e, http.StatusInternalServerError, "チームを登録できませんでした", nil)
 	}
 
-	contestant, _ := getCurrentContestant(e, db, false)
+	contestant, _ := getCurrentContestant(e, db, true)
 
 	_, err = conn.ExecContext(
 		ctx,
@@ -1006,6 +1037,9 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("update contestant: %w", err)
 	}
+	contestant.Name = sql.NullString{req.Name, true}
+	contestant.Student = req.IsStudent
+	contestant.TeamID = sql.NullInt64{teamID, true}
 
 	_, err = conn.ExecContext(
 		ctx,
@@ -1016,6 +1050,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("update team: %w", err)
 	}
+	gcontestantCache.Update(*contestant, contestant.ID)
 
 	return writeProto(e, http.StatusOK, &registrationpb.CreateTeamResponse{
 		TeamId: teamID,
@@ -1079,6 +1114,10 @@ func (*RegistrationService) JoinTeam(e echo.Context) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
+	contestant.TeamID = sql.NullInt64{req.TeamId, true}
+	contestant.Name = sql.NullString{req.Name, true}
+	contestant.Student = req.IsStudent
+	gcontestantCache.Update(*contestant, contestant.ID)
 	return writeProto(e, http.StatusOK, &registrationpb.JoinTeamResponse{})
 }
 
@@ -1120,6 +1159,9 @@ func (*RegistrationService) UpdateRegistration(e echo.Context) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
+	contestant.Name = sql.NullString{req.Name, true}
+	contestant.Student = req.IsStudent
+	gcontestantCache.Update(*contestant, contestant.ID)
 	return writeProto(e, http.StatusOK, &registrationpb.UpdateRegistrationResponse{})
 }
 
@@ -1164,6 +1206,8 @@ func (*RegistrationService) DeleteRegistration(e echo.Context) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
+	contestant.TeamID = sql.NullInt64{0, false}
+	gcontestantCache.Update(*contestant, contestant.ID)
 	return writeProto(e, http.StatusOK, &registrationpb.DeleteRegistrationResponse{})
 }
 
@@ -1285,34 +1329,66 @@ func getXsuportalContext(e echo.Context) *XsuportalContext {
 	return xc.(*XsuportalContext)
 }
 
-func getCurrentContestant(e echo.Context, db sqlx.Queryer, lock bool) (*xsuportal.Contestant, error) {
-	xc := getXsuportalContext(e)
-	if xc.Contestant != nil {
-		return xc.Contestant, nil
-	}
+func getCurrentContestantID(e echo.Context) (string, error) {
 	sess, err := session.Get(SessionName, e)
 	if err != nil {
-		return nil, fmt.Errorf("get session: %w", err)
+		return "", fmt.Errorf("get session: %w", err)
 	}
+	// not login
 	contestantID, ok := sess.Values["contestant_id"]
 	if !ok {
-		return nil, nil
+		return "", nil
 	}
-	var contestant xsuportal.Contestant
+	var c string
+	c, ok = contestantID.(string)
+	if !ok {
+		return "", fmt.Errorf("cannot convert: %w", err)
+	}
+	return c, nil
+}
+
+func getCurrentContestant(e echo.Context, db sqlx.Queryer, lock bool) (*xsuportal.Contestant, error) {
+	xc := getXsuportalContext(e)
+	var err error
+	contestantID, err := getCurrentContestantID(e)
+	if err != nil {
+		return nil, err
+	}
+	contestant, found := gcontestantCache.Get(contestantID)
+	fmt.Printf("contestant cache: %s %s\n", contestantID, found)
+	if found {
+		xc.Contestant = &contestant
+		return xc.Contestant, nil
+	}
+	var c *xsuportal.Contestant
+	c, err = getCurrentContestantReal(db, lock, contestantID)
+	if c != nil {
+		fmt.Println("update cache")
+		gcontestantCache.Update(*c, contestantID)
+		fmt.Println("update done")
+		xc.Contestant = c
+		return xc.Contestant, nil
+	} else {
+		return nil, err
+	}
+}
+
+func getCurrentContestantReal(db sqlx.Queryer, lock bool, contestantID string) (*xsuportal.Contestant, error) {
 	query := "SELECT * FROM `contestants` WHERE `id` = ? LIMIT 1"
 	if lock {
 		query += " FOR UPDATE"
 	}
-	err = sqlx.Get(db, &contestant, query, contestantID)
+	var contestant xsuportal.Contestant
+	err := sqlx.Get(db, &contestant, query, contestantID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query contestant: %w", err)
 	}
-	xc.Contestant = &contestant
-	return xc.Contestant, nil
+	return &contestant, nil
 }
+
 
 func getCurrentTeam(e echo.Context, db sqlx.Queryer, lock bool) (*xsuportal.Team, error) {
 	xc := getXsuportalContext(e)
