@@ -51,6 +51,42 @@ const (
 var db *sqlx.DB
 var notifier xsuportal.Notifier
 
+type teamCache struct {
+	mutex sync.RWMutex
+	teams map[int64]xsuportal.Team
+}
+
+func NewTeamCache() *teamCache {
+	dict := make(map[int64]xsuportal.Team)
+	c := &teamCache{
+		teams: dict,
+	}
+	return c
+}
+
+func (c *teamCache) Update(team xsuportal.Team, teamID int64) {
+	c.mutex.Lock()
+	fmt.Println("teamCache Update lock earn")
+	c.teams[teamID] = team
+	fmt.Println("teamCache Update updated")
+	c.mutex.Unlock()
+}
+
+func (c *teamCache) Lock() {
+	c.mutex.Lock()
+}
+
+func (c *teamCache) Unlock() {
+	c.mutex.Unlock()
+}
+
+func (c *teamCache) Get(id int64) (xsuportal.Team, bool) {
+	c.mutex.RLock()
+	team, found := c.teams[id]
+	c.mutex.RUnlock()
+	return team, found
+}
+
 type contestantCache struct {
 	mutex sync.RWMutex
 	contestants map[string]xsuportal.Contestant
@@ -140,6 +176,7 @@ func (c *leaderboardCache) GetByTime() (*resourcespb.Leaderboard, bool) {
 }
 
 var gcontestantCache = NewContestantCache()
+var gteamCache = NewTeamCache()
 var gleaderboardCache = NewLeaderboardCache()
 var gleaderboardCacheForAudience = NewLeaderboardCache()
 
@@ -1023,7 +1060,7 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 	if err != nil || teamID == 0 {
 		return halt(e, http.StatusInternalServerError, "チームを登録できませんでした", nil)
 	}
-
+	team, _ := getCurrentTeamReal(db, true, teamID);
 	contestant, _ := getCurrentContestant(e, db, true)
 
 	_, err = conn.ExecContext(
@@ -1051,6 +1088,9 @@ func (*RegistrationService) CreateTeam(e echo.Context) error {
 		return fmt.Errorf("update team: %w", err)
 	}
 	gcontestantCache.Update(*contestant, contestant.ID)
+	
+	team.LeaderID = sql.NullString{contestant.ID, true}
+	gteamCache.Update(*team, teamID)
 
 	return writeProto(e, http.StatusOK, &registrationpb.CreateTeamResponse{
 		TeamId: teamID,
@@ -1146,6 +1186,9 @@ func (*RegistrationService) UpdateRegistration(e echo.Context) error {
 		if err != nil {
 			return fmt.Errorf("update team: %w", err)
 		}
+		team.Name = req.TeamName
+		team.EmailAddress = req.EmailAddress
+		gteamCache.Update(*team, team.ID)
 	}
 	_, err = tx.Exec(
 		"UPDATE `contestants` SET `name` = ?, `student` = ? WHERE `id` = ? LIMIT 1",
@@ -1194,6 +1237,8 @@ func (*RegistrationService) DeleteRegistration(e echo.Context) error {
 		if err != nil {
 			return fmt.Errorf("withdrawn members(team_id=%v): %w", team.ID, err)
 		}
+		team.Withdrawn = true
+		gteamCache.Update(*team, team.ID)
 	} else {
 		_, err := tx.Exec(
 			"UPDATE `contestants` SET `team_id` = NULL WHERE `id` = ? LIMIT 1",
@@ -1389,7 +1434,6 @@ func getCurrentContestantReal(db sqlx.Queryer, lock bool, contestantID string) (
 	return &contestant, nil
 }
 
-
 func getCurrentTeam(e echo.Context, db sqlx.Queryer, lock bool) (*xsuportal.Team, error) {
 	xc := getXsuportalContext(e)
 	if xc.Team != nil {
@@ -1402,20 +1446,36 @@ func getCurrentTeam(e echo.Context, db sqlx.Queryer, lock bool) (*xsuportal.Team
 	if contestant == nil {
 		return nil, nil
 	}
+	team, found := gteamCache.Get(contestant.TeamID.Int64)
+	if found {
+		xc.Team = &team
+		return xc.Team, nil
+	}
+	t, err := getCurrentTeamReal(db, lock, contestant.TeamID.Int64)
+	if t != nil {
+		gteamCache.Update(*t, contestant.TeamID.Int64)
+		xc.Team = t
+		return xc.Team, nil
+	} else {
+		return nil, err
+	}
+}
+
+
+func getCurrentTeamReal(db sqlx.Queryer, lock bool, teamID int64) (*xsuportal.Team, error) {
 	var team xsuportal.Team
 	query := "SELECT * FROM `teams` WHERE `id` = ? LIMIT 1"
 	if lock {
 		query += " FOR UPDATE"
 	}
-	err = sqlx.Get(db, &team, query, contestant.TeamID.Int64)
+	err := sqlx.Get(db, &team, query, teamID)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query team: %w", err)
 	}
-	xc.Team = &team
-	return xc.Team, nil
+	return &team, nil
 }
 
 func getCurrentContestStatus(e echo.Context, db sqlx.Queryer) (*xsuportal.ContestStatus, error) {
